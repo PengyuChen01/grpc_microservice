@@ -27,12 +27,16 @@ service BuildService {
 // Service assigning tasks to workers
 service WorkService {
   rpc AssignTask (TaskRequest) returns (WorkerResponse);
+
 }
 
 // The request message from a client
 message ClientRequest {
-  string name = 1;
+  string command = 1;
+  string file = 2;
+  string fileContent = 3;
 }
+
 
 // The server's response message
 message ServerResponse {
@@ -43,9 +47,12 @@ message ServerResponse {
 message TaskRequest {
   string command = 1;
   string file = 2;
+  string fileContent = 3;
 }
 
 // The response from a worker
 message WorkerResponse {
   string completeTask = 1;
 }
+
+

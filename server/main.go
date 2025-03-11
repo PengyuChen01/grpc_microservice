@@ -26,21 +26,17 @@ import (
 	"log"
 	pb "microservice_go/remote-build"
 	"net"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// const (
-// 	defaultName = "world"
-// )
+
 
 var (
 	port = flag.Int("port", 50051, "The server port")
 	addr = flag.String("addr", "localhost:50052", "the address to connect to")
-	// name = flag.String("name", defaultName, "Name to greet")
 )
 
 // server is used to implement helloworld.GreeterServer.
@@ -51,12 +47,11 @@ type server struct {
 
 // SayHello implements helloworld.GreeterServer
 func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*pb.ServerResponse, error) {
-	var stringSep = strings.Split(clientTask.GetName(), " ")
-	var command = stringSep[0]
-	var files = stringSep[1]
+	log.Printf("Received Command: %v", clientTask.Command)
+	
+	log.Printf("Received File: %v", clientTask.File)
+	log.Printf("Received File Content: %v", clientTask.FileContent)
 
-	log.Printf("Command: %v", command)
-	log.Printf("Files: %v", files)
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
@@ -68,7 +63,7 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	r, err := c.AssignTask(ctx, &pb.TaskRequest{Command: command, File: files})
+	r, err := c.AssignTask(ctx, &pb.TaskRequest{Command: clientTask.Command, File: clientTask.File, FileContent: clientTask.FileContent})
 	if err != nil {
 		log.Fatalf("could not greet: %v", err)
 	}
@@ -76,11 +71,6 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 	return &pb.ServerResponse{ServerResponse:  r.GetCompleteTask()}, nil
 }
 
-
-// func (s *server) SayHelloAgain(_ context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
-// 	log.Printf("Received: %v", in.GetName())
-// 	return &pb.HelloReply{Message: "I got " + in.GetName() + "again"}, nil
-// }
 
 func main() {
 	// server set up
@@ -97,13 +87,4 @@ func main() {
 	}
 
 
-
-	// client set up 
-	
-
-	// r, err = c.SayHelloAgain(ctx, &pb.HelloRequest{Name: *name})
-	// if err != nil {
-	// 		log.Fatalf("could not greet: %v", err)
-	// }
-	// log.Printf("%s", r.GetMessage())
 }
