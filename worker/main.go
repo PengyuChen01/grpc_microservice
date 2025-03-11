@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-
+	"os/exec"
 	"google.golang.org/grpc"
 
 	pb "microservice_go/remote-build"
@@ -22,8 +22,16 @@ type server struct {
 }
 
 func (s *server) AssignTask(Message context.Context, serverTask *pb.TaskRequest) (*pb.WorkerResponse, error) {
-	log.Printf("Received: %v", serverTask)
-	return &pb.WorkerResponse{CompleteTask: " Complete" + serverTask.GetTask()}, nil
+	log.Printf("Received Command: %v", serverTask.Command)
+	log.Printf("Received File: %v", serverTask.File)
+	execCommand := exec.Command(serverTask.Command, serverTask.File, "-o", "main.o")
+	log.Printf("Command: %v", execCommand)
+	err := execCommand.Run()
+	if err != nil {
+		log.Fatalf("cmd.Run() failed with %s\n", err)
+	}
+	// execCommand.Output()
+	return &pb.WorkerResponse{CompleteTask: "successfully convert input file " + serverTask.File + " to main.o"}, nil
 }
 
 

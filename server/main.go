@@ -26,6 +26,7 @@ import (
 	"log"
 	pb "microservice_go/remote-build"
 	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -50,7 +51,12 @@ type server struct {
 
 // SayHello implements helloworld.GreeterServer
 func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*pb.ServerResponse, error) {
-	log.Printf("Received: %v", clientTask)
+	var stringSep = strings.Split(clientTask.GetName(), " ")
+	var command = stringSep[0]
+	var files = stringSep[1]
+
+	log.Printf("Command: %v", command)
+	log.Printf("Files: %v", files)
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
@@ -62,12 +68,12 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	r, err := c.AssignTask(ctx, &pb.TaskRequest{Task: clientTask.GetName()})
+	r, err := c.AssignTask(ctx, &pb.TaskRequest{Command: command, File: files})
 	if err != nil {
 		log.Fatalf("could not greet: %v", err)
 	}
 	log.Printf(" %s", r.GetCompleteTask())
-	return &pb.ServerResponse{ServerResponse:  "main.o a.o "}, nil
+	return &pb.ServerResponse{ServerResponse:  r.GetCompleteTask()}, nil
 }
 
 

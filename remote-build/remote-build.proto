@@ -41,7 +41,8 @@ message ServerResponse {
 
 // The task sent from the server to a worker
 message TaskRequest {
-  string[] task = 1;
+  string command = 1;
+  string file = 2;
 }
 
 // The response from a worker
