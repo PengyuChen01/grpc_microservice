@@ -1,65 +1,59 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
 	"log"
-	"net"
 	"os/exec"
 	"strings"
 
-	"google.golang.org/grpc"
-
-	pb "microservice_go/remote-build"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
-
-var (
-	port = flag.Int("port", 50052, "The server port")
-
-)
-
-type server struct {
-	pb.UnimplementedWorkServiceServer
-}
-
-func (s *server) AssignTask(Message context.Context, serverTask *pb.TaskRequest) (*pb.WorkerResponse, error) {
-	log.Printf("Received Command: %v", serverTask.Command)
-	log.Printf("Received File: %v", serverTask.File)
-	log.Printf("Received File Content: %v", serverTask.FileContent)
-	wholeFile := strings.Split(serverTask.File, ".")
-	fileName := wholeFile[0]
-
-	execCommand := exec.Command(serverTask.Command, serverTask.File, "-o", fileName+".o")
-	log.Printf("Command: %v", execCommand)
-	err := execCommand.Run()
-	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
-	}
-	// execCommand.Output()
-	return &pb.WorkerResponse{CompleteTask: "successfully convert input file " + serverTask.File + " to " + fileName+".o"}, nil
-}
-
 
 func main() {
-	flag.Parse()
-	// Set up a connection to the server.
+	topic := "task-queue"
 
-		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	// 创建 Kafka 消费者
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers": "localhost:9092",
+		"group.id":          "worker-group",
+		"auto.offset.reset": "earliest",
+	})
+	if err != nil {
+		log.Fatalf("Failed to create Kafka consumer: %v", err)
+	}
+	defer consumer.Close()
+
+	err = consumer.Subscribe(topic, nil)
+	if err != nil {
+		log.Fatalf("Failed to subscribe to topic: %v", err)
+	}
+
+	log.Println("Worker started, waiting for tasks...")
+
+	for {
+		msg, err := consumer.ReadMessage(-1)
 		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		s := grpc.NewServer()
-		pb.RegisterWorkServiceServer(s, &server{})
-		log.Printf("server listening at %v", lis.Addr())
-		if err := s.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Printf("Kafka error: %v", err)
+			continue
 		}
 
+		log.Printf("Received task: %s", string(msg.Value))
+		data := strings.Split(string(msg.Value), "|")
+		if len(data) != 3 {
+			log.Println("Invalid task format")
+			continue
+		}
 
+		command, file:= data[0], data[1]
+		wholeFile := strings.Split(file, ".")
+		fileName := wholeFile[0]
 
-	// lis, err := net.Listen("tcp", ":0")
-
-	
-
+		execCommand := exec.Command(command, file, "-o", fileName+".o")
+		log.Printf("Executing: %v", execCommand)
+		err = execCommand.Run()
+		if err != nil {
+			log.Printf("Command failed: %v", err)
+		} else {
+			log.Printf("Successfully converted %s to %s.o", file, fileName)
+		}
+	}
 }
