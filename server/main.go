@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	pb "microservice_go/remote-build"
 	"net"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 
 	"google.golang.org/grpc"
 )
@@ -37,9 +40,10 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 
 	topic := "task-queue"
 	message := fmt.Sprintf("%s|%s|%s", clientTask.Command, clientTask.File, clientTask.FileContent)
-
+	numPartitions := 3 // num of partition in task-queue
+	partition := int32(rand.Intn(numPartitions))
 	err := s.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
 		Value:          []byte(message),
 	}, nil)
 	if err != nil {
@@ -49,6 +53,45 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 
 	log.Printf("Task pushed to Kafka: %s", message)
 	return &pb.ServerResponse{ServerResponse: "Task sent to Kafka"}, nil
+}
+
+// 监听 Kafka `result-queue` 并打印结果
+func listenForResults() {
+	topic := "result-queue"
+
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers": "localhost:9092",
+		"group.id":          "server-group",
+		"auto.offset.reset": "earliest",
+	})
+	if err != nil {
+		log.Fatalf("Failed to create Kafka consumer: %v", err)
+	}
+	defer consumer.Close()
+
+	err = consumer.Subscribe(topic, nil)
+	if err != nil {
+		log.Fatalf("Failed to subscribe to topic: %v", err)
+	}
+
+	log.Println("Server listening for task results...")
+
+	for {
+		msg, err := consumer.ReadMessage(-1)
+		if err != nil {
+			log.Printf("Kafka error: %v", err)
+			continue
+		}
+
+		data := strings.Split(string(msg.Value), "|")
+		if len(data) != 2 {
+			log.Println("Invalid result format")
+			continue
+		}
+
+		file, status := data[0], data[1]
+		log.Printf("Received task result: %s -> %s", file, status)
+	}
 }
 
 func main() {
@@ -64,6 +107,10 @@ func main() {
 	s := grpc.NewServer()
 	pb.RegisterBuildServiceServer(s, &server{producer: producer})
 	log.Printf("Server listening at %v", lis.Addr())
+
+	// 启动监听 Kafka `result-queue`
+	go listenForResults()
+
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

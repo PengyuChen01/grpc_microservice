@@ -8,21 +8,50 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func main() {
-	topic := "task-queue"
+// 创建 Kafka 生产者
+func NewKafkaProducer() *kafka.Producer {
+	p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "localhost:9092"})
+	if err != nil {
+		log.Fatalf("Failed to create Kafka producer: %v", err)
+	}
+	return p
+}
 
-	// 创建 Kafka 消费者
+// 发送结果到 Kafka
+func sendResultToKafka(producer *kafka.Producer, file string, status string) {
+	topic := "result-queue"
+	message := file + "|" + status
+
+	err := producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          []byte(message),
+	}, nil)
+	if err != nil {
+		log.Printf("Kafka Produce error: %v", err)
+	} else {
+		log.Printf("Task result pushed to Kafka: %s", message)
+	}
+}
+
+
+func main() {
+	taskTopic := "task-queue"
+	producer := NewKafkaProducer()
+	defer producer.Close()
+
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": "localhost:9092",
-		"group.id":          "worker-group",
-		"auto.offset.reset": "earliest",
+		"bootstrap.servers":             "localhost:9092",
+		"group.id":                      "worker-group",
+		"auto.offset.reset":             "earliest",
+		"enable.auto.commit":            "true",
+		"partition.assignment.strategy": "range",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Kafka consumer: %v", err)
 	}
 	defer consumer.Close()
 
-	err = consumer.Subscribe(topic, nil)
+	err = consumer.Subscribe(taskTopic, nil)
 	if err != nil {
 		log.Fatalf("Failed to subscribe to topic: %v", err)
 	}
@@ -43,7 +72,7 @@ func main() {
 			continue
 		}
 
-		command, file:= data[0], data[1]
+		command, file := data[0], data[1]
 		wholeFile := strings.Split(file, ".")
 		fileName := wholeFile[0]
 
@@ -52,8 +81,10 @@ func main() {
 		err = execCommand.Run()
 		if err != nil {
 			log.Printf("Command failed: %v", err)
+			sendResultToKafka(producer, file, "Failed")
 		} else {
 			log.Printf("Successfully converted %s to %s.o", file, fileName)
+			sendResultToKafka(producer, file, "Success")
 		}
 	}
 }
