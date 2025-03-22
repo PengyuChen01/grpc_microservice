@@ -1,0 +1,25 @@
+{
+    "map": {
+      "hello": {
+        "command": "gcc",
+        "input": ["hello.o", "a.o", "b.o", "zhao.o"]
+      },
+      "hello.o": {
+        "command": "gcc",
+        "input": ["hello.c"]
+      },
+      "a.o": {
+        "command": "gcc",
+        "input": ["a.c"]
+      },
+      "b.o": {
+        "command": "gcc",
+        "input": ["b.c"]
+      },
+      "zhao.o": {
+        "command": "gcc",
+        "input": ["zhao.c"]
+      }
+    }
+  }
+  

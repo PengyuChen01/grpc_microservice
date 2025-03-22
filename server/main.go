@@ -2,17 +2,17 @@ package main
 
 import (
 	"context"
+	// "encoding/base64"
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
+	"net"
 	"strings"
+	"sync"
 
 	pb "microservice_go/remote-build"
-	"net"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-
 	"google.golang.org/grpc"
 )
 
@@ -20,9 +20,12 @@ var (
 	port = flag.Int("port", 50051, "The server port")
 )
 
+// Server struct
 type server struct {
 	pb.UnimplementedBuildServiceServer
-	producer *kafka.Producer
+	producer    *kafka.Producer
+	resultStore map[string]*pb.ResultResponse // Store compiled files
+	mu          sync.Mutex                    // Mutex for concurrent access
 }
 
 // 创建 Kafka 生产者
@@ -40,10 +43,8 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 
 	topic := "task-queue"
 	message := fmt.Sprintf("%s|%s|%s", clientTask.Command, clientTask.File, clientTask.FileContent)
-	numPartitions := 3 // num of partition in task-queue
-	partition := int32(rand.Intn(numPartitions))
 	err := s.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          []byte(message),
 	}, nil)
 	if err != nil {
@@ -55,8 +56,8 @@ func (s *server) SendRequest(_ context.Context, clientTask *pb.ClientRequest) (*
 	return &pb.ServerResponse{ServerResponse: "Task sent to Kafka"}, nil
 }
 
-// 监听 Kafka `result-queue` 并打印结果
-func listenForResults() {
+// 监听 Kafka `result-queue` 并存储结果
+func (s *server) listenForResults() {
 	topic := "result-queue"
 
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
@@ -83,15 +84,48 @@ func listenForResults() {
 			continue
 		}
 
-		data := strings.Split(string(msg.Value), "|")
+		// Extract file name from Kafka Key
+		fileName := string(msg.Key)
+		fileData := string(msg.Value)
+
+		// Debugging log
+		log.Printf("Received from Kafka - File: %s, Data: %s", fileName, fileData)
+
+		// Split fileContent and status from Value
+		data := strings.Split(fileData, "|")
 		if len(data) != 2 {
 			log.Println("Invalid result format")
 			continue
 		}
 
-		file, status := data[0], data[1]
-		log.Printf("Received task result: %s -> %s", file, status)
+		fileContent, status := data[0], data[1]
+
+		// Only store successful compilations
+		if status == "Success" {
+			x := strings.TrimSuffix(fileName, ".c") + ".o"
+			log.Printf("Stored result: %s", x)
+
+			s.mu.Lock()
+			s.resultStore[fileName] = &pb.ResultResponse{
+				FileName:    fileName,
+				FileContent: fileContent, // Send base64 content
+			}
+			s.mu.Unlock()
+		}
 	}
+}
+
+// 让客户端获取结果
+func (s *server) GetResult(ctx context.Context, req *pb.ResultRequest) (*pb.ResultResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, exists := s.resultStore[req.FileName]
+	if !exists {
+		return nil, fmt.Errorf("No result found for file: %s", req.FileName)
+	}
+
+	return result, nil
 }
 
 func main() {
@@ -105,11 +139,14 @@ func main() {
 	defer producer.Close()
 
 	s := grpc.NewServer()
-	pb.RegisterBuildServiceServer(s, &server{producer: producer})
+	serverInstance := &server{
+		producer:    producer,
+		resultStore: make(map[string]*pb.ResultResponse),
+	}
+	pb.RegisterBuildServiceServer(s, serverInstance)
 	log.Printf("Server listening at %v", lis.Addr())
 
-	// 启动监听 Kafka `result-queue`
-	go listenForResults()
+	go serverInstance.listenForResults()
 
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)

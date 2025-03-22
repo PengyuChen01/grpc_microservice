@@ -34,6 +34,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	BuildService_SendRequest_FullMethodName = "/remote_build.BuildService/SendRequest"
+	BuildService_GetResult_FullMethodName   = "/remote_build.BuildService/GetResult"
 )
 
 // BuildServiceClient is the client API for BuildService service.
@@ -43,6 +44,7 @@ const (
 // Service handling requests from clients
 type BuildServiceClient interface {
 	SendRequest(ctx context.Context, in *ClientRequest, opts ...grpc.CallOption) (*ServerResponse, error)
+	GetResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
 }
 
 type buildServiceClient struct {
@@ -63,6 +65,16 @@ func (c *buildServiceClient) SendRequest(ctx context.Context, in *ClientRequest,
 	return out, nil
 }
 
+func (c *buildServiceClient) GetResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResultResponse)
+	err := c.cc.Invoke(ctx, BuildService_GetResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BuildServiceServer is the server API for BuildService service.
 // All implementations must embed UnimplementedBuildServiceServer
 // for forward compatibility.
@@ -70,6 +82,7 @@ func (c *buildServiceClient) SendRequest(ctx context.Context, in *ClientRequest,
 // Service handling requests from clients
 type BuildServiceServer interface {
 	SendRequest(context.Context, *ClientRequest) (*ServerResponse, error)
+	GetResult(context.Context, *ResultRequest) (*ResultResponse, error)
 	mustEmbedUnimplementedBuildServiceServer()
 }
 
@@ -82,6 +95,9 @@ type UnimplementedBuildServiceServer struct{}
 
 func (UnimplementedBuildServiceServer) SendRequest(context.Context, *ClientRequest) (*ServerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendRequest not implemented")
+}
+func (UnimplementedBuildServiceServer) GetResult(context.Context, *ResultRequest) (*ResultResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResult not implemented")
 }
 func (UnimplementedBuildServiceServer) mustEmbedUnimplementedBuildServiceServer() {}
 func (UnimplementedBuildServiceServer) testEmbeddedByValue()                      {}
@@ -122,6 +138,24 @@ func _BuildService_SendRequest_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BuildService_GetResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BuildServiceServer).GetResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BuildService_GetResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BuildServiceServer).GetResult(ctx, req.(*ResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BuildService_ServiceDesc is the grpc.ServiceDesc for BuildService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -132,6 +166,10 @@ var BuildService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendRequest",
 			Handler:    _BuildService_SendRequest_Handler,
+		},
+		{
+			MethodName: "GetResult",
+			Handler:    _BuildService_GetResult_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

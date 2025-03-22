@@ -22,6 +22,7 @@ package remote_build;
 // Service handling requests from clients
 service BuildService {
   rpc SendRequest (ClientRequest) returns (ServerResponse);
+  rpc GetResult (ResultRequest) returns (ResultResponse);
 }
 
 // Service assigning tasks to workers
@@ -54,5 +55,12 @@ message TaskRequest {
 message WorkerResponse {
   string completeTask = 1;
 }
+message ResultRequest {
+  string fileName = 1;
+}
 
+message ResultResponse {
+  string fileName = 1;
+  string fileContent = 2;
+}
 
